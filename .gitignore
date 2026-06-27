@@ -1,0 +1,7 @@
+# build artifacts
+build/
+dist/
+*.deb
+
+# private local notes (kept on disk, never committed)
+*.local.md

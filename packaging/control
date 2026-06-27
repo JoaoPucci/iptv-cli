@@ -1,0 +1,13 @@
+Package: iptv-cli
+Version: @VERSION@
+Section: video
+Priority: optional
+Architecture: all
+Depends: curl, fzf, mpv, jq
+Maintainer: Third Movement <dev@thirdmovement.net>
+Homepage: https://github.com/iptv-org/iptv
+Description: TUI launcher for iptv-org IPTV playlists
+ iptv-cli browses iptv-org playlists with an fzf-based drill-down
+ selector (country / category / language -> channel) and plays the
+ selected stream in mpv. Playlists are fetched live from iptv-org, so
+ the channel list stays current without any locally stored data.

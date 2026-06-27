@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# iptv-cli — a small terminal launcher for iptv-org playlists.
+# Browse channels with an fzf drill-down (country / category / language -> channel)
+# and play the selected stream in mpv. Playlists are fetched live from iptv-org,
+# so the channel list always stays current. This is a *player*, not a content host.
+
+set -o pipefail
+
+VERSION="@VERSION@"
+[[ "$VERSION" == @* ]] && VERSION="dev"   # not substituted -> running from source
+
+BASE="https://iptv-org.github.io/iptv"
+API="https://iptv-org.github.io/api"
+PLAYER="${IPTV_CLI_PLAYER:-mpv}"
+
+die()  { printf 'iptv-cli: %s\n' "$*" >&2; exit 1; }
+need() { command -v "$1" >/dev/null 2>&1 || die "missing dependency: $1"; }
+
+usage() {
+  cat <<'EOF'
+iptv-cli — browse iptv-org channels in your terminal and play them in mpv.
+
+USAGE:
+  iptv-cli                 Interactive: pick country/category/language -> channel
+  iptv-cli countries/jp    Jump straight to any iptv-org playlist path
+  iptv-cli news            Shortcut for categories/news
+  iptv-cli -h | --help     Show this help
+  iptv-cli -v | --version  Show version
+
+ENVIRONMENT:
+  IPTV_CLI_PLAYER          Player command (default: mpv)
+
+CONTROLS:
+  Selector: type to fuzzy-filter, Up/Down move, Enter select, Esc cancel.
+  mpv:      space=pause  f=fullscreen  m=mute  9/0=volume  q=quit
+EOF
+}
+
+check_deps() {
+  need curl; need fzf; need jq
+  command -v "${PLAYER%% *}" >/dev/null 2>&1 || die "player not found: $PLAYER"
+}
+
+# Read an M3U on stdin, emit  "Channel name<TAB>stream URL"
+parse_m3u() {
+  awk '/^#EXTINF/{n=$0;sub(/^#EXTINF[^,]*,/,"",n);next} /^https?:/{print n"\t"$0}'
+}
+
+# Pick a channel from a playlist URL and hand it to the player
+play_from_list() {
+  local listurl="$1" sel url
+  sel=$(curl -fsSL "$listurl" | parse_m3u \
+        | fzf -d'\t' --with-nth=1 --prompt='Channel > ') || return 0
+  [ -n "$sel" ] || return 0
+  url=$(printf '%s' "$sel" | cut -f2-)
+  [ -n "$url" ] || die "no stream URL for that entry"
+  exec $PLAYER "$url"
+}
+
+# Pick a value from an iptv-org API list; echo the resulting playlist URL.
+# args: <json> <jq-key> <prompt> <subdir-url> <lc|"">
+choose_from_api() {
+  local json="$1" key="$2" prompt="$3" subdir="$4" lc="$5" val
+  val=$(curl -fsSL "$API/$json" \
+        | jq -r ".[] | \"\(.name)\t\(.$key)\"" \
+        | fzf -d'\t' --with-nth=1 --prompt="$prompt" | cut -f2-) || return 1
+  [ -n "$val" ] || return 1
+  [ "$lc" = "lc" ] && val=$(printf '%s' "$val" | tr 'A-Z' 'a-z')
+  printf '%s/%s.m3u' "$subdir" "$val"
+}
+
+interactive() {
+  local mode path
+  mode=$(printf 'countries\ncategories\nlanguages\nall channels\n' \
+         | fzf --prompt='Browse by > ') || exit 0
+  case "$mode" in
+    countries)  path=$(choose_from_api countries.json  code "Country > "  "$BASE/countries"  lc) || exit 0 ;;
+    categories) path=$(choose_from_api categories.json id   "Category > " "$BASE/categories" "") || exit 0 ;;
+    languages)  path=$(choose_from_api languages.json  code "Language > " "$BASE/languages"  "") || exit 0 ;;
+    *)          path="$BASE/index.m3u" ;;
+  esac
+  [ -n "${path:-}" ] || exit 0
+  play_from_list "$path"
+}
+
+main() {
+  case "${1:-}" in
+    -h|--help)    usage; exit 0 ;;
+    -v|--version) printf 'iptv-cli %s\n' "$VERSION"; exit 0 ;;
+  esac
+  check_deps
+  if [ "$#" -eq 0 ]; then
+    interactive
+  else
+    case "$1" in
+      */*) play_from_list "$BASE/$1.m3u" ;;            # e.g. countries/jp
+      *)   play_from_list "$BASE/categories/$1.m3u" ;; # shortcut: news, sports...
+    esac
+  fi
+}
+
+main "$@"

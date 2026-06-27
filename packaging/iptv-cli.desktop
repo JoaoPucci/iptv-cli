@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=IPTV CLI
+GenericName=IPTV Player
+Comment=Browse and play iptv-org channels in a terminal
+Exec=iptv-cli
+Icon=video-x-generic
+Terminal=true
+Categories=AudioVideo;Video;Player;
+Keywords=iptv;tv;stream;m3u;
